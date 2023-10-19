@@ -100,10 +100,10 @@ const byte NUM_TX_BUFS = 2;             // number of CAN transmit buffers
 const byte EXRAIL_BUFFER_SIZE = 32;     // size of EXRAIL serial input buffer
 
 // CBUS objects
-CBUSConfig module_config;               // configuration object
+CBUSConfig module_config;               // module configuration object
 CBUS2515 CBUS(&module_config);          // CBUS object
 CBUSLED ledGrn, ledYlw;                 // two LED objects
-CBUSSwitch pb_switch;                   // CBUS switch object
+CBUSSwitch cbus_switch;                 // CBUS switch object
 
 // module name, must be 7 characters, space padded
 unsigned char mname[7] = { 'E', 'X', 'A', 'D', 'A', 'P', 'T' };
@@ -160,15 +160,16 @@ void setupCBUS(void) {
   CBUS.setLEDs(ledGrn, ledYlw);
 
   // initialise CBUS switch and assign to CBUS
-  pb_switch.setPin(CBUS_SWITCH_PIN, LOW);
-  pb_switch.run();
-  CBUS.setSwitch(pb_switch);
+  cbus_switch.setPin(CBUS_SWITCH_PIN, LOW);
+  cbus_switch.run();
+  CBUS.setSwitch(cbus_switch);
 
   // module reset - if switch is depressed at startup and module is in SLiM mode
-  if (pb_switch.isPressed() && !module_config.FLiM) {
+  if (cbus_switch.isPressed() && !module_config.FLiM) {
     Serial << F("> switch was pressed at startup in SLiM mode") << endl;
-    module_config.resetModule(ledGrn, ledYlw, pb_switch);
+    module_config.resetModule(ledGrn, ledYlw, cbus_switch);
     // module reboots
+    /*NOTREACHED*/
   }
 
   // opportunity to set one-time module configuration items after module reset, e.g. events, NVs
