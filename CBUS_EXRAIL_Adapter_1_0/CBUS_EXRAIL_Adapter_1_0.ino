@@ -293,7 +293,7 @@ void frame_handler(CANFrame *msg) {
 
   if (is_CBUS_event(msg->data[0])) {                              // message opcode is a CBUS event
     if (module_config.readNV(1) == 0) {                           // send all CBUS messages if NV1 = 0
-      send_message_to_EXRAIL(msg);                                   // may apply its own filter
+      send_message_to_EXRAIL(msg);                                // may apply its own filter
     }
   }
 
@@ -311,7 +311,7 @@ void event_handler(byte index, CANFrame *msg) {
   (void)index;                                                   // unused
 
   if (module_config.readNV(1) == 1) {                            // send only previously taught events if NV1 = 1
-    send_message_to_EXRAIL(msg);                                    // may apply its own filter
+    send_message_to_EXRAIL(msg);                                 // may apply its own filter
   }
 
   return;
@@ -431,9 +431,9 @@ void read_data_from_EXRAIL(void) {
         som_rcvd = false;
         break;
 
-      default:                                                 // any other alphanumeric character -- append to string only if SOM received
-        if (som_rcvd && isalnum(c)) {
-          input_buffer[input_buffer_index] = c;
+      default:                                                 // any other alphanumeric character
+        if (som_rcvd && isalnum(c)) {                          // append to string only if SOM has been received
+          input_buffer[input_buffer_index] = c; 
           ++input_buffer_index;
 
           if (input_buffer_index >= EXRAIL_BUFFER_SIZE) {      // input too long -- discard
