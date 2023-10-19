@@ -334,16 +334,16 @@ char *format_CAN_message(const CANFrame *msg) {
 
   static char msgstr[48], tbuff[8];
 
-  snprintf(msgstr, sizeof(msgstr) - 1, "[%03lx] [%1d] [ ", msg->id, msg->len);
+  snprintf(msgstr, sizeof(msgstr), "[%03lx] [%1d] [ ", msg->id, msg->len);
 
   for (byte i = 0; i < msg->len && i < 8; i++) {
-    snprintf(tbuff, sizeof(tbuff) - 1, "%02x ", msg->data[i]);
-    strlcat(msgstr, tbuff, sizeof(msgstr) - 1);
+    snprintf(tbuff, sizeof(tbuff), "%02x ", msg->data[i]);
+    strlcat(msgstr, tbuff, sizeof(msgstr));
   }
 
-  strlcat(msgstr, " ] ", sizeof(msgstr) - 1);
-  strlcat(msgstr, msg->rtr ? "R" : "", sizeof(msgstr) - 1);
-  strlcat(msgstr, msg->ext ? "X" : "", sizeof(msgstr) - 1);
+  strlcat(msgstr, " ] ", sizeof(msgstr));
+  strlcat(msgstr, msg->rtr ? "R" : "", sizeof(msgstr));
+  strlcat(msgstr, msg->ext ? "X" : "", sizeof(msgstr));
 
   return msgstr;
 }
