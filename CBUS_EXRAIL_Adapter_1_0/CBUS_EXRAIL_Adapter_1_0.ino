@@ -69,7 +69,7 @@
 
 */
 
-// CBUS library header files
+// CBUS library headers
 #include <CBUS2515.h>                   // CAN controller and CBUS class -- uses CBUS.h and ACAN2515.h
 #include <CBUSswitch.h>                 // CBUS pushbutton switch class
 #include <CBUSLED.h>                    // CBUS LED class
@@ -77,10 +77,10 @@
 #include <CBUSParams.h>                 // CBUS parameter class
 #include <cbusdefs.h>                   // CBUS constants
 
-// other 3rd party library headers
-#include <Streaming.h>                  // serial output handling
+// 3rd party library headers
+#include <Streaming.h>                  // serial output formatting
 
-// defines
+// definitions
 #define EXRAIL_SERIAL_PORT Serial       // the serial port to communicate with EXRAIL on the DCC-EX command station
 
 // constants
@@ -97,7 +97,7 @@ const byte CAN_CS_PIN  = 10;            // MCP2515 chip select pin
 const byte NUM_RX_BUFS = 8;             // number of CAN receive buffers
 const byte NUM_TX_BUFS = 2;             // number of CAN transmit buffers
 
-const byte MAX_BUFFER_LEN = 32;         // size of EXRAIL serial input buffer
+const byte EXRAIL_BUFFER_SIZE = 32;     // size of EXRAIL serial input buffer
 
 // CBUS objects
 CBUSConfig module_config;               // configuration object
@@ -112,9 +112,9 @@ unsigned char mname[7] = { 'E', 'X', 'A', 'D', 'A', 'P', 'T' };
 void event_handler(byte, CANFrame *);
 void frame_handler(CANFrame *);
 bool is_CBUS_event(byte);
-void send_data_to_EXRAIL(CANFrame *);
+void send_message_to_EXRAIL(CANFrame *);
 void read_data_from_EXRAIL(void);
-void process_data_from_EXRAIL(const char *);
+void process_message_from_EXRAIL(const char *);
 void process_serial_input(void);
 void print_config(void);
 
@@ -174,7 +174,7 @@ void setupCBUS(void) {
   // opportunity to set one-time module configuration items after module reset, e.g. events, NVs
   // reset will clear the event table and set all NVs to zero
   if (module_config.isResetFlagSet()) {
-    module_config.writeNV(1, 0);                                    // use some other way to determine whuch events to forward to EXRAIL
+    module_config.writeNV(1, 0);                                    // use some other method to determine whuch events to forward to EXRAIL
     module_config.clearResetFlag();
   }
 
@@ -209,9 +209,13 @@ void setup(void) {
 
   uint32_t t1 = 0;
 
+  // main serial interface
   Serial.begin(115200);
   while (!Serial && millis() - t1 < 5000);
   Serial << endl << endl << F("> ** CBUS EXRAIL Adapter module 1 0 ** ") << __FILE__ << endl;
+
+  // serial interface to EXRAIL, if separate
+  // EXRAIL_SERIAL_PORT.begin(115200);
 
   // configure the CBUS library and CAN bus interface
   setupCBUS();
@@ -276,6 +280,7 @@ void loop(void) {
 //
 /// user-defined frame processing callback function
 /// called from the CBUS library for every CAN frame received
+/// this comprises all CBUS messages
 /// it receives a pointer to the received CAN frame
 /// don't handle taught events here, use the event_handler function instead
 //
@@ -287,7 +292,7 @@ void frame_handler(CANFrame *msg) {
 
   if (is_CBUS_event(msg->data[0])) {                              // message opcode is a CBUS event
     if (module_config.readNV(1) == 0) {                           // send all CBUS messages if NV1 = 0
-      send_data_to_EXRAIL(msg);                                   // may apply its own filter
+      send_message_to_EXRAIL(msg);                                   // may apply its own filter
     }
   }
 
@@ -305,7 +310,7 @@ void event_handler(byte index, CANFrame *msg) {
   (void)index;                                                   // unused
 
   if (module_config.readNV(1) == 1) {                            // send only previously taught events if NV1 = 1
-    send_data_to_EXRAIL(msg);                                    // may apply its own filter
+    send_message_to_EXRAIL(msg);                                    // may apply its own filter
   }
 
   return;
@@ -391,9 +396,10 @@ bool is_CBUS_event(byte opcode) {
 /// send a CBUS message to EXRAIL over a serial link
 //
 
-void send_data_to_EXRAIL(CANFrame *msg) {
+void send_message_to_EXRAIL(CANFrame *msg) {
 
   // *** TODO - apply a message filter, format the string and write to the EXRAIL serial port
+  Serial << F("> sending CAN message to EXRAIL = ") << format_CAN_message(msg) << endl;
 
   return;
 }
@@ -404,26 +410,35 @@ void send_data_to_EXRAIL(CANFrame *msg) {
 
 void read_data_from_EXRAIL(void) {
 
-  static char input_buffer[MAX_BUFFER_LEN] = {'\0'};
-  static byte input_buffer_index = 0;
+  static bool som_rcvd = false;                                // has the start-of-message char been received ?
+  static char input_buffer[EXRAIL_BUFFER_SIZE] = {'\0'};       // buffer in which to build message
+  static byte input_buffer_index = 0;                          // current offset into buffer where next char will be written
 
   while (EXRAIL_SERIAL_PORT.available()) {
 
     char c = EXRAIL_SERIAL_PORT.read();
 
     switch (c) {
-      case '\n':                                               // end of line -- process the string
-      case '\r':
-        process_data_from_EXRAIL(input_buffer);                // process the string
+      case '<':                                                // start of new message
         input_buffer_index = 0;                                // reset the buffer index
+        som_rcvd = true;
         break;
 
-      default:                                                 // any other character -- append to string
-        input_buffer[input_buffer_index] = c;
-        ++input_buffer_index;
+      case '>':                                                // end of message
+        process_message_from_EXRAIL(input_buffer);             // process the string
+        input_buffer_index = 0;                                // reset the buffer index
+        som_rcvd = false;
+        break;
 
-        if (input_buffer_index >= MAX_BUFFER_LEN) {            // input too long -- discard
-          input_buffer_index = 0;
+      default:                                                 // any other alphanumeric character -- append to string only if SOM received
+        if (som_rcvd && isalnum(c)) {
+          input_buffer[input_buffer_index] = c;
+          ++input_buffer_index;
+
+          if (input_buffer_index >= EXRAIL_BUFFER_SIZE) {      // input too long -- discard
+            input_buffer_index = 0;
+            som_rcvd = false;
+          }
         }
 
         break;
@@ -439,9 +454,11 @@ void read_data_from_EXRAIL(void) {
 /// process a complete message from EXRAIL
 //
 
-void process_data_from_EXRAIL(const char *buffer) {
+void process_message_from_EXRAIL(const char *buffer) {
 
   // *** TODO
+  Serial << F("> processing message from EXRAIL = ") << buffer << endl;
+
   return;
 }
 
@@ -554,8 +571,8 @@ void process_serial_input(void) {
 
         break;
 
-      // CAN bus status
       case 'c':
+        // CAN bus status
         CBUS.printStatus();
         break;
 
